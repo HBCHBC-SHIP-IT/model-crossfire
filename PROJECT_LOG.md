@@ -32,3 +32,13 @@
 - Codex Desktop GUI is not driven directly.
 - Claude/Codex CLI authentication must already work locally.
 - Queue/output files are plain text and should not contain secrets.
+
+## 2026-06-06 - Crossfire Cycle Command
+
+- Added `run-cycle` to process one Claude task, relay the latest Claude output to Codex, run one Codex review, then stop.
+- Added Claude permission bypass support:
+  - `--permission-mode bypassPermissions`
+  - `--dangerously-skip-permissions`
+- This maps to the user's Claude UI auto-approval workflow without requiring GUI key presses such as Shift+Tab.
+- The tool still does not drive the Claude/Codex desktop windows; it uses CLI processes and file outputs.
+- This preserves the human gate between cycles and avoids uncontrolled infinite agent loops.

@@ -54,6 +54,12 @@ Run one Claude task:
 python model_crossfire.py run-claude --cwd C:\path\to\project --permission-mode default
 ```
 
+Run Claude with permission bypass in a trusted workspace:
+
+```powershell
+python model_crossfire.py run-claude --cwd C:\path\to\project --permission-mode bypassPermissions --dangerously-skip-permissions
+```
+
 Relay the latest Claude output to Codex for review:
 
 ```powershell
@@ -64,6 +70,22 @@ Run one Codex review:
 
 ```powershell
 python model_crossfire.py run-codex --cwd C:\path\to\project
+```
+
+Run one full crossfire cycle:
+
+```powershell
+python model_crossfire.py run-cycle --cwd C:\path\to\project --claude-dangerously-skip-permissions
+```
+
+This does exactly one sequence:
+
+```text
+next Claude task
+  -> Claude CLI output file
+  -> Codex review task
+  -> Codex CLI review file
+  -> stop
 ```
 
 ## Directory Layout
@@ -95,6 +117,19 @@ The default loop is human-gated:
 5. Read the result and decide the next step.
 
 This keeps the lead agent in control and avoids uncontrolled agent chatter.
+
+## GUI vs CLI
+
+Model Crossfire does not control the Claude or Codex desktop windows. It uses
+the CLI tools:
+
+```text
+claude -p ...
+codex exec ...
+```
+
+That means desktop windows may not visibly move while work is happening. Outputs
+are written to files under `out/`.
 
 ## Privacy Notes
 

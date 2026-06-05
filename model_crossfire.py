@@ -116,6 +116,8 @@ def run_claude(args: argparse.Namespace) -> int:
         "--permission-mode",
         args.permission_mode,
     ]
+    if args.dangerously_skip_permissions:
+        cmd.append("--dangerously-skip-permissions")
     if args.add_dir:
         cmd.extend(["--add-dir", args.add_dir])
 
@@ -149,6 +151,35 @@ def run_claude(args: argparse.Namespace) -> int:
     print(f"Claude output: {out_path}")
     print(f"Processed task: {processed}")
     return result.returncode
+
+
+def run_cycle(args: argparse.Namespace) -> int:
+    """Run one Claude task, relay its output, then run one Codex review."""
+    claude_args = argparse.Namespace(
+        cwd=args.cwd,
+        add_dir=args.add_dir,
+        timeout=args.claude_timeout,
+        permission_mode=args.claude_permission_mode,
+        dangerously_skip_permissions=args.claude_dangerously_skip_permissions,
+    )
+    claude_code = run_claude(claude_args)
+    if claude_code != 0 and not args.relay_on_claude_failure:
+        print(
+            "Claude returned non-zero; not relaying to Codex. "
+            "Use --relay-on-claude-failure to review failed outputs."
+        )
+        return claude_code
+
+    relay_code = relay_claude_to_codex(argparse.Namespace())
+    if relay_code != 0:
+        return relay_code
+
+    codex_args = argparse.Namespace(
+        cwd=args.cwd,
+        timeout=args.codex_timeout,
+        sandbox=args.codex_sandbox,
+    )
+    return run_codex(codex_args)
 
 
 def run_codex(args: argparse.Namespace) -> int:
@@ -278,6 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
             "plan",
         ],
     )
+    p.add_argument(
+        "--dangerously-skip-permissions",
+        action="store_true",
+        help="Pass Claude's permission bypass flag. Use only in trusted workspaces.",
+    )
     p.set_defaults(func=run_claude)
 
     p = sub.add_parser("run-codex", help="Run one Codex queued task")
@@ -291,6 +327,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Queue latest Claude output for Codex review",
     )
     p.set_defaults(func=relay_claude_to_codex)
+
+    p = sub.add_parser(
+        "run-cycle",
+        help="Run one Claude task, relay output, then run one Codex review",
+    )
+    p.add_argument("--cwd", default="")
+    p.add_argument("--add-dir", default="")
+    p.add_argument("--claude-timeout", type=int, default=1800)
+    p.add_argument("--codex-timeout", type=int, default=1800)
+    p.add_argument("--codex-sandbox", default="workspace-write")
+    p.add_argument(
+        "--claude-permission-mode",
+        default="bypassPermissions",
+        choices=[
+            "default",
+            "acceptEdits",
+            "auto",
+            "bypassPermissions",
+            "dontAsk",
+            "plan",
+        ],
+    )
+    p.add_argument(
+        "--claude-dangerously-skip-permissions",
+        action="store_true",
+        help="Pass Claude's permission bypass flag. Use only in trusted workspaces.",
+    )
+    p.add_argument(
+        "--relay-on-claude-failure",
+        action="store_true",
+        help="Still queue Claude output for Codex review when Claude exits non-zero.",
+    )
+    p.set_defaults(func=run_cycle)
 
     return parser
 
