@@ -1,0 +1,27 @@
+{
+  "lead": {
+    "worker": "codex",
+    "backend": "codex",
+    "role": "technical lead and reviewer"
+  },
+  "workers": [
+    {
+      "worker": "claude-research",
+      "backend": "claude",
+      "role": "read-only researcher",
+      "writes": "reports only"
+    },
+    {
+      "worker": "claude-impl",
+      "backend": "claude",
+      "role": "scoped implementer",
+      "writes": "code only when explicitly allowed"
+    },
+    {
+      "worker": "claude-tester",
+      "backend": "claude",
+      "role": "test runner and failure summarizer",
+      "writes": "reports and test logs only"
+    }
+  ]
+}

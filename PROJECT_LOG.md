@@ -42,3 +42,25 @@
 - This maps to the user's Claude UI auto-approval workflow without requiring GUI key presses such as Shift+Tab.
 - The tool still does not drive the Claude/Codex desktop windows; it uses CLI processes and file outputs.
 - This preserves the human gate between cycles and avoids uncontrolled infinite agent loops.
+
+## 2026-06-06 - AgentRelay Rename And Multi-Worker Foundation
+
+- Renamed the public project identity from Model Crossfire to AgentRelay.
+- Kept `model_crossfire.py` as a backward-compatible wrapper.
+- Added `agent_relay.py` as the preferred entry point.
+- Added arbitrary worker queues:
+  - `queue/to_<worker>/`
+  - `out/<worker>/`
+- Added `run-worker` for named workers with `claude` or `codex` backends.
+- Added `relay-worker` to review one worker's latest output with another worker.
+- Added worker lock files under `locks/` to prevent accidental duplicate runs for the same worker.
+- Added `status` to show pending tasks, outputs, and locks.
+- Added task envelopes with role metadata and required report format.
+- Added `agents.example.json` and `examples/report_template.md`.
+- Preserved the original commands:
+  - `run-claude`
+  - `run-codex`
+  - `relay-claude-to-codex`
+  - `run-cycle`
+- Intended open-source positioning:
+  - A file-queue multi-agent workbench where a strong lead model delegates scoped work to worker models, then reviews durable reports.

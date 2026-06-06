@@ -4,6 +4,7 @@ __pycache__/
 queue/
 out/
 logs/
+locks/
 
 .env
 *.local
