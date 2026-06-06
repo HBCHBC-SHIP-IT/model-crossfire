@@ -64,3 +64,31 @@
   - `run-cycle`
 - Intended open-source positioning:
   - A file-queue multi-agent workbench where a strong lead model delegates scoped work to worker models, then reviews durable reports.
+
+## 2026-06-06 - AgentRelay Skill, Plugin, And Agent Integrations
+
+- Created installable Codex skill at `skills/agent-relay/`:
+  - `SKILL.md` with YAML frontmatter triggering on multi-agent collaboration,
+    worker delegation, token reduction, and review flows.
+  - `agents/openai.yaml` with scoped worker instructions and Report format.
+  - `references/commands.md` for CLI command reference.
+- Created Codex plugin bundle at `plugins/agent-relay/`:
+  - Valid `.codex-plugin/plugin.json` manifest with a self-contained copy of
+    the AgentRelay skill.
+- Created repository marketplace metadata at
+  `.agents/plugins/marketplace.json`.
+- Added agent integrations:
+  - `integrations/claude-code/CLAUDE.md` — explains how a Claude worker reads
+    a queued task, follows report constraints, and avoids scope expansion.
+  - `integrations/generic-agents/AGENTS.md` — concise fragment for agents
+    without native Skill support.
+- Updated root README with discovery and installation instructions.
+- All existing CLI commands preserved; backward compatibility maintained.
+- Validation:
+  - `python -m py_compile agent_relay.py`: PASS.
+  - `python -m py_compile model_crossfire.py`: PASS.
+  - `python agent_relay.py doctor`: PASS.
+  - `python agent_relay.py status`: PASS.
+  - `git diff --check`: PASS.
+  - Official `quick_validate.py` for both skill copies: PASS.
+  - Official `validate_plugin.py`: PASS.

@@ -169,9 +169,63 @@ Rules for safe use:
 - Do not let worker outputs merge directly into production work.
 - Avoid concurrent workers that edit the same files.
 
+## Discovery & Installation
+
+AgentRelay ships with integrations that make it discoverable by other AI agents.
+
+### Codex Skill
+
+A Codex skill lives at `skills/agent-relay/`. When installed, Codex CLI
+automatically activates it for multi-agent collaboration, worker delegation,
+and review-flow tasks.
+
+To install the skill manually:
+
+```powershell
+# Copy the skill into Codex's skills directory
+Copy-Item -Recurse -Force skills\agent-relay `
+  "$HOME\.codex\skills\agent-relay"
+```
+
+### Codex Plugin
+
+A plugin bundle at `plugins/agent-relay/` packages the skill with a valid
+`.codex-plugin/plugin.json` manifest. After cloning this repository, add its
+marketplace and install the plugin:
+
+```powershell
+codex plugin marketplace add .
+codex plugin add agent-relay@agent-relay
+```
+
+### Claude Code Integration
+
+`integrations/claude-code/CLAUDE.md` explains how a Claude Code worker reads a
+queued task, follows report constraints, and avoids expanding scope. Point
+Claude Code at this file when configuring a worker:
+
+```powershell
+python agent_relay.py run-worker --worker claude-research `
+  --backend claude `
+  --cwd C:\path\to\project `
+  --add-dir integrations\claude-code
+```
+
+### Generic Agent Integration
+
+`integrations/generic-agents/AGENTS.md` provides a concise fragment for agents
+without native Skill support. Copy or reference this file in any agent's
+context to teach it AgentRelay worker discipline.
+
 ## Directory Layout
 
 ```text
+skills/agent-relay/        # Codex skill (SKILL.md + agents/)
+plugins/agent-relay/       # Codex plugin bundle
+.agents/plugins/           # Repo marketplace manifest
+integrations/              # Agent-specific integration guides
+  claude-code/
+  generic-agents/
 queue/
   to_<worker>/
   processed/

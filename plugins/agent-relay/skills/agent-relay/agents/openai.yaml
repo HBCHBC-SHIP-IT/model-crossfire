@@ -1,0 +1,7 @@
+interface:
+  display_name: "AgentRelay"
+  short_description: "Delegate scoped tasks across local AI agents"
+  default_prompt: "Use $agent-relay to delegate this task to a scoped worker and review its durable report."
+
+policy:
+  allow_implicit_invocation: true

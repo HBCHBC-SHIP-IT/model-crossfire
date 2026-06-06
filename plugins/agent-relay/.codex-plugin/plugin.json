@@ -1,0 +1,35 @@
+{
+  "name": "agent-relay",
+  "version": "0.1.0",
+  "description": "File-queue collaboration workflows for delegating scoped tasks across Claude Code and Codex CLI.",
+  "author": {
+    "name": "AgentRelay contributors",
+    "url": "https://github.com/HBCHBC-SHIP-IT/model-crossfire"
+  },
+  "repository": "https://github.com/HBCHBC-SHIP-IT/model-crossfire",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "collaboration",
+    "worker-queue",
+    "claude-code",
+    "codex-cli"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "AgentRelay",
+    "shortDescription": "Delegate scoped work to local AI workers",
+    "longDescription": "Use file queues and durable reports to coordinate Claude Code and Codex CLI workers while preserving lead-agent review gates.",
+    "developerName": "AgentRelay contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/HBCHBC-SHIP-IT/model-crossfire",
+    "defaultPrompt": [
+      "Delegate this scoped task to a worker and review its report.",
+      "Split this work across independent workers without overlapping edits."
+    ]
+  }
+}
