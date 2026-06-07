@@ -5,6 +5,8 @@ queue/
 out/
 logs/
 locks/
+.agent_tasks/
+empty-mcp.json
 
 .env
 *.local

@@ -125,6 +125,139 @@ def move_processed(task_path: Path, agent: str) -> Path:
     return dest
 
 
+def decode_timeout_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def write_run_started(
+    *,
+    log_path: Path,
+    agent: str,
+    worker: str,
+    task: Path,
+    output: Path,
+    cmd: list[str],
+    cwd: str,
+    timeout: int,
+) -> str:
+    started_at = dt.datetime.now().isoformat()
+    write_json(
+        log_path,
+        {
+            "agent": agent,
+            "worker": worker,
+            "task": str(task),
+            "output": str(output),
+            "status": "running",
+            "started_at": started_at,
+            "timeout_seconds": timeout,
+            "cmd": cmd,
+            "cwd": cwd,
+        },
+    )
+    return started_at
+
+
+def write_timeout_report(
+    *,
+    exc: subprocess.TimeoutExpired,
+    out_path: Path,
+    log_path: Path,
+    agent: str,
+    worker: str,
+    task: Path,
+    cmd: list[str],
+    cwd: str,
+    started_at: str,
+) -> Path:
+    ended_at = dt.datetime.now().isoformat()
+    stdout = decode_timeout_output(exc.stdout)
+    stderr = decode_timeout_output(exc.stderr)
+    body = (
+        f"# AgentRelay timeout\n\n"
+        f"Agent `{agent}` worker `{worker}` exceeded the configured "
+        f"timeout of {exc.timeout} seconds.\n\n"
+        "The child process was terminated before a complete response was "
+        "returned. Any token usage that happened before timeout may still "
+        "be billed by the provider.\n\n"
+        f"- Task: `{task}`\n"
+        f"- Started at: `{started_at}`\n"
+        f"- Ended at: `{ended_at}`\n"
+        f"- CWD: `{cwd}`\n\n"
+    )
+    if stdout:
+        body += "## Partial stdout\n\n```text\n" + stdout + "\n```\n\n"
+    if stderr:
+        body += "## Partial stderr\n\n```text\n" + stderr + "\n```\n\n"
+    if not stdout and not stderr:
+        body += "No partial stdout/stderr was captured before timeout.\n"
+    write_text(out_path, body)
+    write_json(
+        log_path,
+        {
+            "agent": agent,
+            "worker": worker,
+            "task": str(task),
+            "output": str(out_path),
+            "status": "timeout",
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "timeout_seconds": exc.timeout,
+            "returncode": 124,
+            "cmd": cmd,
+            "cwd": cwd,
+        },
+    )
+    return move_processed(task, worker)
+
+
+def terminate_process_tree(proc: subprocess.Popen[str]) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        proc.kill()
+
+
+def run_agent_command(
+    *,
+    cmd: list[str],
+    prompt: str,
+    cwd: str,
+    timeout: int,
+) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=cwd,
+    )
+    try:
+        stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        terminate_process_tree(proc)
+        stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(
+            cmd=cmd,
+            timeout=timeout,
+            output=stdout,
+            stderr=stderr,
+        ) from None
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
 def make_task(args: argparse.Namespace) -> int:
     queue = queue_for_worker(args.agent)
     source = Path(args.file)
@@ -212,21 +345,48 @@ def run_claude(args: argparse.Namespace) -> int:
     ]
     if args.dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
+    if getattr(args, "strict_empty_mcp", False):
+        empty_mcp = ROOT / "empty-mcp.json"
+        if not empty_mcp.exists():
+            empty_mcp.write_text('{\n  "mcpServers": {}\n}\n', encoding="utf-8")
+        cmd.extend(["--strict-mcp-config", "--mcp-config", str(empty_mcp)])
     if args.add_dir:
         cmd.extend(["--add-dir", args.add_dir])
 
+    cwd = args.cwd or str(ROOT)
     lock_path = acquire_lock(worker)
+    started_at = write_run_started(
+        log_path=log_path,
+        agent="claude",
+        worker=worker,
+        task=task,
+        output=out_path,
+        cmd=cmd,
+        cwd=cwd,
+        timeout=args.timeout,
+    )
     try:
-        result = subprocess.run(
-            cmd,
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            cwd=args.cwd or str(ROOT),
+        result = run_agent_command(
+            cmd=cmd,
+            prompt=prompt,
+            cwd=cwd,
             timeout=args.timeout,
         )
+    except subprocess.TimeoutExpired as exc:
+        processed = write_timeout_report(
+            exc=exc,
+            out_path=out_path,
+            log_path=log_path,
+            agent="claude",
+            worker=worker,
+            task=task,
+            cmd=cmd,
+            cwd=cwd,
+            started_at=started_at,
+        )
+        print(f"Claude timed out: {out_path}", file=sys.stderr)
+        print(f"Processed task: {processed}", file=sys.stderr)
+        return 124
     finally:
         release_lock(lock_path)
 
@@ -241,9 +401,12 @@ def run_claude(args: argparse.Namespace) -> int:
             "worker": worker,
             "task": str(task),
             "output": str(out_path),
+            "status": "completed",
+            "started_at": started_at,
+            "ended_at": dt.datetime.now().isoformat(),
             "returncode": result.returncode,
             "cmd": cmd,
-            "cwd": args.cwd or str(ROOT),
+            "cwd": cwd,
         },
     )
     processed = move_processed(task, worker)
@@ -260,6 +423,7 @@ def run_cycle(args: argparse.Namespace) -> int:
         timeout=args.claude_timeout,
         permission_mode=args.claude_permission_mode,
         dangerously_skip_permissions=args.claude_dangerously_skip_permissions,
+        strict_empty_mcp=args.claude_strict_empty_mcp,
     )
     claude_code = run_claude(claude_args)
     if claude_code != 0 and not args.relay_on_claude_failure:
@@ -311,18 +475,40 @@ def run_codex(args: argparse.Namespace) -> int:
         "-",
     ]
 
+    cwd = args.cwd or str(ROOT)
     lock_path = acquire_lock(worker)
+    started_at = write_run_started(
+        log_path=log_path,
+        agent="codex",
+        worker=worker,
+        task=task,
+        output=out_path,
+        cmd=cmd,
+        cwd=cwd,
+        timeout=args.timeout,
+    )
     try:
-        result = subprocess.run(
-            cmd,
-            input=prompt,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            cwd=args.cwd or str(ROOT),
+        result = run_agent_command(
+            cmd=cmd,
+            prompt=prompt,
+            cwd=cwd,
             timeout=args.timeout,
         )
+    except subprocess.TimeoutExpired as exc:
+        processed = write_timeout_report(
+            exc=exc,
+            out_path=out_path,
+            log_path=log_path,
+            agent="codex",
+            worker=worker,
+            task=task,
+            cmd=cmd,
+            cwd=cwd,
+            started_at=started_at,
+        )
+        print(f"Codex timed out: {out_path}", file=sys.stderr)
+        print(f"Processed task: {processed}", file=sys.stderr)
+        return 124
     finally:
         release_lock(lock_path)
 
@@ -335,9 +521,12 @@ def run_codex(args: argparse.Namespace) -> int:
             "task": str(task),
             "output": str(out_path),
             "transcript": str(transcript_path),
+            "status": "completed",
+            "started_at": started_at,
+            "ended_at": dt.datetime.now().isoformat(),
             "returncode": result.returncode,
             "cmd": cmd,
-            "cwd": args.cwd or str(ROOT),
+            "cwd": cwd,
         },
     )
     processed = move_processed(task, worker)
@@ -547,6 +736,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Pass Claude's permission bypass flag. Use only in trusted workspaces.",
     )
+    p.add_argument(
+        "--strict-empty-mcp",
+        action="store_true",
+        help="Run Claude with an empty MCP config to avoid user/project MCP startup hangs.",
+    )
     p.set_defaults(func=run_worker)
 
     p = sub.add_parser("run-claude", help="Run one Claude queued task")
@@ -570,6 +764,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dangerously-skip-permissions",
         action="store_true",
         help="Pass Claude's permission bypass flag. Use only in trusted workspaces.",
+    )
+    p.add_argument(
+        "--strict-empty-mcp",
+        action="store_true",
+        help="Run Claude with an empty MCP config to avoid user/project MCP startup hangs.",
     )
     p.set_defaults(func=run_claude)
 
@@ -619,6 +818,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--claude-dangerously-skip-permissions",
         action="store_true",
         help="Pass Claude's permission bypass flag. Use only in trusted workspaces.",
+    )
+    p.add_argument(
+        "--claude-strict-empty-mcp",
+        action="store_true",
+        help="Run Claude with an empty MCP config to avoid user/project MCP startup hangs.",
     )
     p.add_argument(
         "--relay-on-claude-failure",
